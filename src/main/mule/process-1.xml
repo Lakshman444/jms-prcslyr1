@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:email="http://www.mulesoft.org/schema/mule/email"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/email http://www.mulesoft.org/schema/mule/email/current/mule-email.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd">
+	<email:smtp-config name="Email_SMTP" doc:name="Email SMTP" doc:id="9b354727-e167-4b7f-a92a-9dd6c261d3bf" >
+		<email:smtp-connection host="smtp.gmail.com" port="587" user="asamohanlakshman@gmail.com" password="9966653004" connectionTimeout="50" >
+			<email:properties >
+				<email:property key="mail.smtp.starttls.enable" value="true" />
+			</email:properties>
+		</email:smtp-connection>
+	</email:smtp-config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="789fe9fa-cad1-4bbd-ae33-b1312be4e04c" >
+		<http:listener-connection host="0.0.0.0" port="8083" />
+	</http:listener-config>
+	<jms:config name="JMS_Config" doc:name="JMS Config" doc:id="edcf8abe-4831-4e53-aa04-0df24ccc2e7e" >
+		<jms:active-mq-connection username="admin" password="admin" >
+			<jms:factory-configuration brokerUrl="tcp://localhost:61616" />
+		</jms:active-mq-connection>
+	</jms:config>
+	<http:listener-config name="HTTP_Listener_config1" doc:name="HTTP Listener config" doc:id="ef3c9bd9-1ceb-4387-aefa-5e046a36cc9e" >
+		<http:listener-connection host="0.0.0.0" port="8082" />
+	</http:listener-config>
+	<flow name="process-1Flow" doc:id="683e4535-be96-4a1a-a410-381c7d5b2b5e" >
+		<ee:transform doc:name="Transform Message" doc:id="e569f837-5022-4a55-8203-078d338269b7" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<try doc:name="Try" doc:id="68b711d6-8d54-4235-8e7c-cb992abb3ede" >
+			<http:request method="POST" doc:name="Request" doc:id="227eb006-ef70-4e92-9448-57a68dab30d3" url="http://localhost:8083/api/empdetails" responseTimeout="1800000" />
+			<error-handler >
+				<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="03583c83-2f41-4ccb-b3ca-c3ef6d9f7c8b" >
+					<jms:publish doc:name="Publish" doc:id="fc9e824e-f8b1-4e78-9d66-875e71c693a6" config-ref="JMS_Config" destination="queue1"/>
+					<logger level="INFO" doc:name="Logger" doc:id="f284d7d8-3562-404f-9d66-d999ba6c46c6" message="#[payload]"/>
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<email:send doc:id="ba154184-ea7d-4724-8d68-86f426083f43" config-ref="Email_SMTP" fromAddress="asamohanlakshman@gmail.com" subject="POC" doc:name="Send">
+			<email:to-addresses >
+				<email:to-address value="alakshman@eniquesolutions.com" />
+			</email:to-addresses>
+			<email:body contentType="text/plain" >
+				<email:content ><![CDATA[#["your request has been recieved"]]]></email:content>
+			</email:body>
+		</email:send>
+	</flow>
+	<flow name="processFlow1" doc:id="09d84858-8355-440b-a7e9-5ed8caa6bfab" >
+		<http:listener doc:name="Listener" doc:id="2f445b56-5f9d-4932-ac42-7801bc4aeb1a" config-ref="HTTP_Listener_config" path="/reprocess" />
+		<jms:consume doc:name="Consume" doc:id="e7786bda-9a39-459d-b178-19cf182f8163" config-ref="JMS_Config" destination="queue1" ackMode="MANUAL" />
+		<set-variable value="#[attributes.ackId]" doc:name="Set Variable" doc:id="2835669c-2c51-4cbc-98d9-a64c7b149cbb" variableName="ackid1" />
+		<logger level="INFO" doc:name="Logger" doc:id="01e32e6a-10a2-452d-b490-484f1c76aa21" message="#[vars.ackid1]" />
+		<until-successful maxRetries="5" doc:name="Until Successful" doc:id="590c6f65-ecce-4048-8584-dbde1afc11cd" millisBetweenRetries="6000">
+			<http:request method="POST" doc:name="Request" doc:id="ae43e020-0bcf-4839-aa40-6fbe26b80c06" url="http://localhost:8081/api/empdetails" responseTimeout="1800000" />
+		</until-successful>
+		<jms:ack doc:name="Ack" doc:id="e14ac021-7d41-435c-9d1e-50b204aff92b" ackId="#[vars.ackid1]" />
+	</flow>
+</mule>
